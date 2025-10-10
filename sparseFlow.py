@@ -146,7 +146,7 @@ def get_motion_detections(frame1,
 
 cluster_model = DBSCAN(eps=50.0, min_samples=3)
 
-fpath = r"out_frames"
+fpath = r"out_frames_2"
 image_paths = sorted(glob(f"{fpath}/*.jpg"))
 
 # get previous frame
@@ -180,6 +180,6 @@ for i in range(1, len(image_paths)):
     plt.imshow(cv2.resize(curr_frame, (952, 535)))
     plt.axis('off')
     fig.savefig(f"temp/frame_{i}.png")
-    plt.close();
+    plt.close()
     
     frames.append(curr_frame)
