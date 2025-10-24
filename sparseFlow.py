@@ -1,5 +1,6 @@
 from scipy.stats import kurtosis
 from sklearn.cluster import DBSCAN
+from sklearn.preprocessing import StandardScaler
 import os
 from glob import glob
 import re
@@ -8,6 +9,8 @@ import cv2
 import matplotlib.pyplot as plt
 
 from motion_detection_utils import *
+
+lk_params = dict(winSize=(41, 41), maxLevel=8, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01))
 
 def motion_comp(prev_frame, curr_frame, num_points=500, points_to_use=500, transform_type='affine'):
     """ Obtains new warped frame1 to account for camera (ego) motion
@@ -29,10 +32,10 @@ def motion_comp(prev_frame, curr_frame, num_points=500, points_to_use=500, trans
     curr_gray = cv2.cvtColor(curr_frame, cv2.COLOR_RGB2GRAY)
 
     # get features for first frame
-    corners = cv2.goodFeaturesToTrack(prev_gray, num_points, qualityLevel=0.01, minDistance=10)
+    corners = cv2.goodFeaturesToTrack(prev_gray, num_points, qualityLevel=0.001, minDistance=3)
 
     # get matching features in next frame with Sparse Optical Flow Estimation
-    matched_corners, status, _ = cv2.calcOpticalFlowPyrLK(prev_gray, curr_gray, corners, None)
+    matched_corners, status, _ = cv2.calcOpticalFlowPyrLK(prev_gray, curr_gray, corners, None, **lk_params)
 
     # reformat previous and current corner points
     prev_points = corners[status==1]
@@ -55,19 +58,17 @@ def motion_comp(prev_frame, curr_frame, num_points=500, points_to_use=500, trans
     return A, prev_points, curr_points
 
 def get_motion_detections(frame1, 
-                          frame2, 
-                          cluster_model, 
+                          frame2,
                           c=2, 
-                          angle_thresh=0.1, 
+                          angle_thresh=0.2, 
                           edge_thresh=50, 
-                          max_cluster_size=80, 
+                          max_cluster_size=15, 
                           distance_metric='l2', 
                           transform_type='affine'):
     """ Obtains detected motion betweej frame 1 and frame 2 
         Inputs:
             frame1 - previous frame
             frame2 - current frame
-            cluster_model - cluster model object
             c - tunable threshold hyperparamer for outlier detection
             angle_thresh - threshold for angular uniformity of the cluster 
                 (Determines if the Std Dev of the Cluster flow angles is too large)
@@ -117,12 +118,12 @@ def get_motion_detections(frame1,
     # add additional motion data for clustering
     motion = compensated_points[motion_idx] - motion_points
     magnitude = np.linalg.norm(motion, ord=2, axis=1)
-    angle = np.arctan2(motion[:, 0], motion[:, 1]) # horizontal/vertial
+    angle = np.arctan2(motion[:, 1], motion[:, 0]) # horizontal/vertial
 
-    motion_data = np.hstack((motion_points, np.c_[magnitude], np.c_[angle]))
+    X = np.hstack((motion_points, np.c_[magnitude], np.c_[angle]))
 
     # cluster motion data
-    cluster_model.fit(motion_data)
+    cluster_model = DBSCAN(eps=40.0, min_samples=2).fit(X)
 
     # filter clusters with large variation in angular motion
     clusters = []
@@ -138,15 +139,15 @@ def get_motion_detections(frame1,
 
             # remove clusters that are too close to the edges and ones that are too large
             centroid = cluster.mean(axis=0)
-            if (len(cluster) < max_cluster_size) \
-                and not (np.any(centroid < edge_thresh) or np.any(centroid > far_edge_array)):
+            # if (len(cluster) < max_cluster_size) \
+            #     and not (np.any(centroid < edge_thresh) or np.any(centroid > far_edge_array)):
+            #     clusters.append(cluster)
+            if not (np.any(centroid < edge_thresh) or np.any(centroid > far_edge_array)):
                 clusters.append(cluster)
 
     return clusters
 
-cluster_model = DBSCAN(eps=50.0, min_samples=3)
-
-fpath = r"out_frames_2"
+fpath = r"out_frames"
 image_paths = sorted(glob(f"{fpath}/*.jpg"))
 
 # get previous frame
@@ -160,9 +161,8 @@ for i in range(1, len(image_paths)):
     # get detected cluster
     clusters = get_motion_detections(prev_frame, 
                                      curr_frame, 
-                                     cluster_model, 
-                                     c=1,
-                                     angle_thresh=0.1, 
+                                     c=2,
+                                     angle_thresh=0.2, 
                                      max_cluster_size=50,
                                      distance_metric='l2', 
                                      transform_type='affine')

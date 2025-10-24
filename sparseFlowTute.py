@@ -11,14 +11,14 @@ from motion_detection_utils import *
 #####
 
 # fpath = r"testImgs"
-# fpath = r"out_frames"
-fpath = r"out_frames_2"
+fpath = r"out_frames"
+# fpath = r"out_frames_2"
 
 # image_paths = sorted(glob(f"{fpath}/*.JPG"))
 image_paths = sorted(glob(f"{fpath}/*.jpg"))
 print(len(image_paths))
 
-idx = 1
+idx = 67
 frame1 = cv2.cvtColor(cv2.imread(image_paths[idx]), cv2.COLOR_BGR2RGB)
 frame2 = cv2.cvtColor(cv2.imread(image_paths[idx + 1]), cv2.COLOR_BGR2RGB)
 
@@ -48,10 +48,14 @@ def motion_comp(prev_frame, curr_frame, num_points=500, points_to_use=500, trans
     curr_gray = cv2.cvtColor(curr_frame, cv2.COLOR_RGB2GRAY)
 
     # get features for first frame
-    corners = cv2.goodFeaturesToTrack(prev_gray, num_points, qualityLevel=0.01, minDistance=10)
+    corners = cv2.goodFeaturesToTrack(prev_gray, num_points, qualityLevel=0.001, minDistance=3)
 
     # get matching features in next frame with Sparse Optical Flow Estimation
-    matched_corners, status, _ = cv2.calcOpticalFlowPyrLK(prev_gray, curr_gray, corners, None)
+    lk_params = dict(winSize=(41, 41), maxLevel=8,
+                 criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01))
+    matched_corners, status, _ = cv2.calcOpticalFlowPyrLK(prev_gray, curr_gray, corners, None, **lk_params)
+
+    # matched_corners, status, _ = cv2.calcOpticalFlowPyrLK(prev_gray, curr_gray, corners, None)
 
     # reformat previous and current corner points
     prev_points = corners[status==1]
@@ -168,11 +172,11 @@ print(f"Sample Mean: {mu :.4f}, Sample Std Dev: {sig :.4f} IQR: {iqr :.4f}\n"
 l1 = np.sum(np.abs(compensated_flow), axis=1) # l1 norm
 l2 = np.linalg.norm(compensated_flow, ord=2, axis=1) # l2 norm
 
-_, ax5 = plt.subplots(1, 2, figsize=(15, 5), sharex=True, sharey=True)
-ax5[0].hist(l1, bins=100)
-ax5[0].set_title("Histrogram of L1 Distance of Compensated Flow Vectors")
-ax5[1].hist(l2, bins=100)
-ax5[1].set_title("Histrogram of L2 Distance of Compensated Flow Vectors")
+# _, ax5 = plt.subplots(1, 2, figsize=(15, 5), sharex=True, sharey=True)
+# ax5[0].hist(l1, bins=100)
+# ax5[0].set_title("Histrogram of L1 Distance of Compensated Flow Vectors")
+# ax5[1].hist(l2, bins=100)
+# ax5[1].set_title("Histrogram of L2 Distance of Compensated Flow Vectors")
 
 
 lap_dist = lambda x, b, mu : (1/(2*b)) * np.exp(-np.abs(x - mu)/b)
@@ -181,13 +185,13 @@ lap_dist = lambda x, b, mu : (1/(2*b)) * np.exp(-np.abs(x - mu)/b)
 b = np.sqrt(sig/2) # gives a better fit
 vals = np.arange(x.min(), x.max(), 0.1)
 
-plt.figure()
-plt.hist(x, bins=100, density=True)
-# plt.plot(vals, lap_dist(vals, b, mu), label="Laplace")
-plt.title("Histrogram of L2 Norm of Compensated Flow Vectors")
-plt.ylabel("Counts")
-plt.xlabel("Bins (L2 distance)")
-plt.legend()
+# plt.figure()
+# plt.hist(x, bins=100, density=True)
+# # plt.plot(vals, lap_dist(vals, b, mu), label="Laplace")
+# plt.title("Histrogram of L2 Norm of Compensated Flow Vectors")
+# plt.ylabel("Counts")
+# plt.xlabel("Bins (L2 distance)")
+# plt.legend()
 
 motion_idx = (x >= upper_bound)
 print(motion_idx.sum())
@@ -202,14 +206,28 @@ plt.title("Motion Points on Frame 2")
 
 motion = compensated_points[motion_idx] - curr_points[motion_idx] # curr_points[idx] - compensated_points[idx]
 magnitude = np.linalg.norm(motion, ord=2, axis=1)
-angle = np.arctan2(motion[:, 0], motion[:, 1]) # horizontal/vertial
+angle = np.arctan2(motion[:, 1], motion[:, 0]) # horizontal/vertial
 
 X = np.hstack((motion_points, np.c_[magnitude], np.c_[angle]))
 print(X.shape)
 
+# from sklearn.cluster import DBSCAN
+
+# clustering = DBSCAN(eps=30, min_samples=2)
+
+# 2) scale features before DBSCAN so motion matters
+from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import DBSCAN
 
-clustering = DBSCAN(eps=30.0, min_samples=2)
+X = np.c_[motion_points, np.linalg.norm(motion, axis=1), angle]
+X[:, 2] = np.linalg.norm(motion, axis=1)   # magnitude
+X[:, 3] = angle
+
+scaler = StandardScaler()
+Xn = scaler.fit_transform(X)
+
+clustering = DBSCAN(eps=40, min_samples=2).fit(Xn)  # tune eps after scaling
+
 print(clustering.fit(X))
 print(np.unique(clustering.labels_))
 
@@ -226,8 +244,8 @@ plt.title("Unfiltered Motion Clusters on Frame 2")
 lbl = 0
 img = plot_points(frame2.copy(), motion_points[clustering.labels_ == lbl], radius=20)
 
-plt.figure()
-plt.imshow(img)
+# plt.figure()
+# plt.imshow(img)
 
 h, w, _ = frame1.shape
 w,h

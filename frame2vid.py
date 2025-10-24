@@ -2,7 +2,7 @@
 # Usage examples:
 #   python frames_to_video.py /path/to/frames out.mp4 --fps 10
 #   python frames_to_video.py /path/to/frames out.avi --fps 30 --size keep
-#
+#   python frame2vid.py temp idk3.mp4 
 # Requires: pip install opencv-python
 
 import argparse, os, re, cv2
