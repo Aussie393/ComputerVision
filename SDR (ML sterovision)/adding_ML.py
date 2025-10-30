@@ -6,7 +6,7 @@ import cv2.ximgproc as xip
 from ultralytics import YOLO
 
 # === CONFIG ===
-DATA_ROOT = "data_scene_flow/training"
+DATA_ROOT = "SDR (ML sterovision)/data_scene_flow/training"
 baseline_m = 0.54           # KITTI stereo baseline
 focal_length_px = 721.5377  # KITTI calibration
 bad_px_threshold = 3.0      # pixels
